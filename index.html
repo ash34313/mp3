@@ -294,7 +294,8 @@
 
       <div style="display: flex; gap: 8px; margin-top: 16px;">
         <button style="flex: 1; padding: 8px; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px;" onclick="closeModal('convert-modal')">Cancel</button>
-        <button style="flex: 1; padding: 8px; background: var(--accent-purple); color: white; border: none; border-radius: 6px;" onclick="executeConversion()">Done</button>
+        <button style="flex: 1; padding: 8px; background: var(--bg-card); color: var(--accent-blue); border: 1px solid var(--accent-blue); border-radius: 6px; font-weight: 600;" onclick="importDirectly()">Just Import</button>
+        <button style="flex: 1; padding: 8px; background: var(--accent-purple); color: white; border: none; border-radius: 6px; font-weight: 600;" onclick="executeConversion()">Convert</button>
       </div>
     </div>
   </div>
@@ -606,6 +607,41 @@
         alert('Please select files using the + button first.');
       } else {
         openModal('convert-modal');
+      }
+    }
+
+    async function importDirectly() {
+      closeModal('convert-modal');
+      
+      const folder = document.getElementById('target-folder').value;
+      const title = document.getElementById('meta-title').value;
+      const artist = document.getElementById('meta-artist').value;
+      const album = document.getElementById('meta-album').value;
+
+      try {
+        for (let file of importedQueue) {
+          const buffer = await file.arrayBuffer();
+          const cleanName = file.name.replace(/\.[^/.]+$/, "");
+          
+          await saveRecord("files", {
+            name: file.name,
+            title: title || cleanName,
+            artist: artist || "Unknown Artist",
+            album: album || "Imported",
+            folder: folder,
+            type: file.type || 'audio/mpeg',
+            size: file.size,
+            data: buffer
+          });
+        }
+        
+        importedQueue = [];
+        renderQueueList();
+        renderDocuments();
+        alert('Files imported directly to Documents!');
+      } catch (error) {
+        console.error(error);
+        alert('Failed to import files.');
       }
     }
 
