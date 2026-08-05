@@ -1,9 +1,9 @@
 const CACHE_NAME = 'mp3-pwa-v1';
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/app-icon.png',
+  './',
+  './index.html',
+  './manifest.json',
+  './app-icon.png',
   'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js',
   'https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js'
 ];
