@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <title>MP3 Converter & Player</title>
+  
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
+  <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
+
+  <style>
+    :root {
+      --bg-base: #0d1117;
+      --bg-surface: #161b22;
+      --bg-card: #21262d;
+      --accent-purple: #7c4dff;
+      --accent-green: #00e676;
+      --accent-red: #ff5252;
+      --accent-blue: #29b6f6;
+      --text-main: #f0f6fc;
+      --text-muted: #8b949e;
+      --border-color: #30363d;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    header {
+      background-color: var(--bg-surface);
+      padding: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    header h1 { font-size: 1.2rem; font-weight: 700; color: var(--text-main); }
+    
+    .btn-icon {
+      background: var(--accent-purple);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      font-size: 1.2rem;
+      cursor: pointer;
+    }
+
+    nav {
+      display: flex;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    nav button {
+      flex: 1;
+      padding: 12px;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-weight: 600;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+    }
+
+    nav button.active {
+      color: var(--accent-purple);
+      border-bottom-color: var(--accent-purple);
+    }
+
+    main { flex: 1; overflow-y: auto; padding: 16px; }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .file-item, .playlist-card {
+      background: var(--bg-surface);
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border: 1px solid var(--border-color);
+    }
+
+    .file-info { display: flex; flex-direction: column; gap: 4px; }
+    .file-name { font-weight: 600; font-size: 0.95rem; }
+    .file-meta { font-size: 0.75rem; color: var(--text-muted); }
+
+    .actions { display: flex; gap: 8px; align-items: center; }
+
+    .btn-action {
+      background: none;
+      border: none;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+
+    .checkbox-select {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent-purple);
+      margin-right: 12px;
+      cursor: pointer;
+    }
+
+    .toggle-group {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .toggle-group label { font-size: 0.85rem; color: var(--text-main); }
+
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 1000;
+    }
+
+    .modal.open { display: flex; }
+
+    .modal-card {
+      background: var(--bg-surface);
+      width: 100%;
+      max-width: 340px;
+      border-radius: 12px;
+      padding: 20px;
+      border: 1px solid var(--border-color);
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal-card h3 { margin-bottom: 12px; }
+
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; }
+    .form-group select, .form-group input[type="text"], .form-group input[type="number"] {
+      width: 100%;
+      padding: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      border-radius: 6px;
+    }
+
+    footer {
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-color);
+      padding: 12px 16px;
+    }
+
+    audio { width: 100%; height: 40px; }
+    input[type="file"] { display: none; }
+
+    .reorder-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      border-radius: 4px;
+      width: 24px;
+      height: 24px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1 id="page-title">Documents</h1>
+    <button class="btn-icon" onclick="document.getElementById('picker').click()">+</button>
+    <input type="file" id="picker" accept="video/*,audio/*" multiple onchange="handleFileSelect(event)">
+  </header>
+
+  <nav>
+    <button class="nav-btn active" onclick="switchTab('documents', event)">Documents</button>
+    <button class="nav-btn" onclick="switchTab('playlists', event)">Playlists</button>
+    <button class="nav-btn" onclick="switchTab('tools', event)">Convert & Merge</button>
+  </nav>
+
+  <main>
+    <section id="documents" class="tab-content active">
+      <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+        <select id="folder-filter" onchange="renderDocuments()" style="flex:1; padding:8px; background:var(--bg-card); border:1px solid var(--border-color); color:var(--text-main); border-radius:6px;">
+          <option value="All">All Folders</option>
+          <option value="Music">Music</option>
+          <option value="Favorites">Favorites</option>
+          <option value="Recordings">Recordings</option>
+        </select>
+        <button onclick="openAddToPlaylistModal()" style="padding:8px; background:var(--bg-card); border:1px solid var(--border-color); color:var(--text-main); border-radius:6px; font-weight:600;">+ Playlist</button>
+      </div>
+      <div id="file-list"></div>
+    </section>
+
+    <section id="playlists" class="tab-content">
+      <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+        <input type="text" id="new-playlist-name" placeholder="New Playlist Name" style="flex:1; padding:8px; background:var(--bg-surface); border:1px solid var(--border-color); color:var(--text-main); border-radius:6px;">
+        <button onclick="createPlaylist()" style="padding:8px 16px; background:var(--accent-purple); color:white; border:none; border-radius:6px;">Create</button>
+      </div>
+      <div id="playlist-list"></div>
+    </section>
+
+    <section id="tools" class="tab-content">
+      <div class="file-item" style="flex-direction: column; align-items: flex-start; gap: 10px;">
+        <h3>Media Processor</h3>
+        <p class="file-meta">Convert imported media or apply audio effects like fade and crossfade.</p>
+        
+        <div id="queue-reorder-list" style="width: 100%; margin: 8px 0;"></div>
+
+        <button id="convert-btn" onclick="triggerConversion()" style="width: 100%; padding: 10px; background: var(--accent-purple); color: white; border: none; border-radius: 6px; font-weight: 600;">Convert Queue to MP3</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal" id="convert-modal">
+    <div class="modal-card">
+      <h3>Convert & Metadata Options</h3>
+      
+      <div class="form-group">
+        <label for="meta-title">Track Title</label>
+        <input type="text" id="meta-title" placeholder="Title">
+      </div>
+      <div class="form-group">
+        <label for="meta-artist">Artist</label>
+        <input type="text" id="meta-artist" placeholder="Artist">
+      </div>
+      <div class="form-group">
+        <label for="meta-album">Album</label>
+        <input type="text" id="meta-album" placeholder="Album">
+      </div>
+      <div class="form-group">
+        <label for="target-folder">Folder Category</label>
+        <select id="target-folder">
+          <option value="Music">Music</option>
+          <option value="Favorites">Favorites</option>
+          <option value="Recordings">Recordings</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="format">Format</label>
+        <select id="format">
+          <option value="mp3">MP3</option>
+          <option value="wav">WAV</option>
+          <option value="m4a">M4A</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="bitrate">Bitrate</label>
+        <select id="bitrate">
+          <option value="128k">128 kbps</option>
+          <option value="192k">192 kbps</option>
+          <option value="320k">320 kbps</option>
+        </select>
+      </div>
+      
+      <div class="toggle-group">
+        <label for="enable-fade">Fade In/Out</label>
+        <input type="checkbox" id="enable-fade" class="checkbox-select">
+      </div>
+      
+      <div class="form-group">
+        <label for="fade-duration">Fade Duration (Seconds)</label>
+        <input type="number" id="fade-duration" value="3" min="1" max="10">
+      </div>
+
+      <div class="toggle-group">
+        <label for="enable-crossfade">Crossfade Multiple Inputs</label>
+        <input type="checkbox" id="enable-crossfade" class="checkbox-select">
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <button style="flex: 1; padding: 8px; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px;" onclick="closeModal('convert-modal')">Cancel</button>
+        <button style="flex: 1; padding: 8px; background: var(--accent-purple); color: white; border: none; border-radius: 6px;" onclick="executeConversion()">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="playlist-modal">
+    <div class="modal-card">
+      <h3>Add to Playlist</h3>
+      <div class="form-group">
+        <label for="target-playlist">Select Playlist</label>
+        <select id="target-playlist"></select>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <button style="flex: 1; padding: 8px; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px;" onclick="closeModal('playlist-modal')">Cancel</button>
+        <button style="flex: 1; padding: 8px; background: var(--accent-purple); color: white; border: none; border-radius: 6px;" onclick="batchAddToPlaylist()">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <audio id="global-player" controls></audio>
+  </footer>
+
+  <script>
+    const { FFmpeg } = FFmpegWASM;
+    const { fetchFile } = FFmpegUtil;
+    let ffmpeg = null;
+
+    let db = null;
+    let importedQueue = [];
+
+    function initDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open("MediaAppDB", 3);
+        request.onupgradeneeded = (e) => {
+          db = e.target.result;
+          if (!db.objectStoreNames.contains("files")) {
+            db.createObjectStore("files", { keyPath: "id", autoIncrement: true });
+          }
+          if (!db.objectStoreNames.contains("playlists")) {
+            db.createObjectStore("playlists", { keyPath: "id", autoIncrement: true });
+          }
+        };
+        request.onsuccess = (e) => {
+          db = e.target.result;
+          resolve(db);
+        };
+        request.onerror = (e) => reject(e);
+      });
+    }
+
+    function saveRecord(storeName, data) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, "readwrite");
+        const store = tx.objectStore(storeName);
+        const req = store.add(data);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    function updateRecord(storeName, data) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, "readwrite");
+        const store = tx.objectStore(storeName);
+        const req = store.put(data);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    function getAllRecords(storeName) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, "readonly");
+        const store = tx.objectStore(storeName);
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    function deleteRecord(storeName, id) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, "readwrite");
+        const store = tx.objectStore(storeName);
+        const req = store.delete(id);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function loadFFmpeg() {
+      if (!ffmpeg) {
+        ffmpeg = new FFmpeg();
+        await ffmpeg.load();
+      }
+    }
+
+    function switchTab(tabId, e) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+      
+      document.getElementById(tabId).classList.add('active');
+      e.target.classList.add('active');
+      document.getElementById('page-title').innerText = tabId.charAt(0).toUpperCase() + tabId.slice(1);
+    }
+
+    async function handleFileSelect(event) {
+      const files = Array.from(event.target.files);
+      importedQueue = files;
+      renderQueueList();
+      if (files.length > 0) openModal('convert-modal');
+    }
+
+    function renderQueueList() {
+      const list = document.getElementById('queue-reorder-list');
+      list.innerHTML = '';
+      importedQueue.forEach((file, index) => {
+        const item = document.createElement('div');
+        item.className = 'file-item';
+        item.style.padding = '8px';
+        item.innerHTML = `
+          <span class="file-name" style="font-size:0.85rem">${file.name}</span>
+          <div class="actions">
+            <button class="reorder-btn" onclick="moveQueueItem(${index}, -1)">▲</button>
+            <button class="reorder-btn" onclick="moveQueueItem(${index}, 1)">▼</button>
+          </div>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    function moveQueueItem(index, direction) {
+      const target = index + direction;
+      if (target >= 0 && target < importedQueue.length) {
+        const temp = importedQueue[index];
+        importedQueue[index] = importedQueue[target];
+        importedQueue[target] = temp;
+        renderQueueList();
+      }
+    }
+
+    async function renderDocuments() {
+      const list = document.getElementById('file-list');
+      list.innerHTML = '';
+      
+      const filter = document.getElementById('folder-filter').value;
+      const files = await getAllRecords("files");
+      
+      files.filter(f => filter === "All" || f.folder === filter).forEach(fileRecord => {
+        const item = document.createElement('div');
+        item.className = 'file-item';
+        
+        const blob = new Blob([fileRecord.data], { type: fileRecord.type });
+        const url = URL.createObjectURL(blob);
+        const sizeMB = (fileRecord.size / (1024 * 1024)).toFixed(2);
+
+        item.innerHTML = `
+          <div style="display:flex; align-items:center;">
+            <input type="checkbox" class="checkbox-select doc-checkbox" data-id="${fileRecord.id}">
+            <div class="file-info">
+              <span class="file-name">${fileRecord.title || fileRecord.name}</span>
+              <span class="file-meta">${fileRecord.artist || 'Unknown Artist'} • ${fileRecord.folder || 'Music'} • ${sizeMB} MB</span>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn-action" style="color:var(--accent-green)" onclick="playFile(${fileRecord.id})">▶</button>
+            <button class="btn-action" style="color:var(--accent-blue)" onclick="shareFile(${fileRecord.id})">⎘</button>
+            <button class="btn-action" style="color:var(--accent-red)" onclick="removeFile(${fileRecord.id})">✕</button>
+          </div>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    async function shareFile(id) {
+      const files = await getAllRecords("files");
+      const record = files.find(f => f.id === id);
+      if (!record) return;
+
+      const blob = new Blob([record.data], { type: record.type });
+      const file = new File([blob], record.name, { type: record.type });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: record.title || record.name
+        });
+      } else {
+        alert("Sharing is not supported on this browser.");
+      }
+    }
+
+    async function removeFile(id) {
+      await deleteRecord("files", id);
+      renderDocuments();
+    }
+
+    async function playFile(id) {
+      const files = await getAllRecords("files");
+      const record = files.find(f => f.id === id);
+      if (!record) return;
+
+      const blob = new Blob([record.data], { type: record.type });
+      const url = URL.createObjectURL(blob);
+      const player = document.getElementById('global-player');
+      player.src = url;
+      player.play();
+
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: record.title || record.name,
+          artist: record.artist || "Unknown Artist",
+          album: record.album || "Converter PWA"
+        });
+      }
+    }
+
+    async function createPlaylist() {
+      const input = document.getElementById('new-playlist-name');
+      if (!input.value.trim()) return;
+      
+      await saveRecord("playlists", { name: input.value.trim(), items: [] });
+      input.value = '';
+      renderPlaylists();
+    }
+
+    async function renderPlaylists() {
+      const list = document.getElementById('playlist-list');
+      list.innerHTML = '';
+      
+      const playlists = await getAllRecords("playlists");
+      playlists.forEach(pl => {
+        const item = document.createElement('div');
+        item.className = 'playlist-card';
+        item.innerHTML = `
+          <div class="file-info">
+            <span class="file-name">${pl.name}</span>
+            <span class="file-meta">${pl.items.length} Tracks</span>
+          </div>
+          <button class="btn-action" style="color:var(--accent-red)" onclick="removePlaylist(${pl.id})">✕</button>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    async function removePlaylist(id) {
+      await deleteRecord("playlists", id);
+      renderPlaylists();
+    }
+
+    async function openAddToPlaylistModal() {
+      const selected = getSelectedDocumentIds();
+      if (selected.length === 0) {
+        alert("Please select at least one track from Documents.");
+        return;
+      }
+      
+      const playlists = await getAllRecords("playlists");
+      const select = document.getElementById('target-playlist');
+      select.innerHTML = '';
+      
+      if (playlists.length === 0) {
+        alert("Please create a playlist in the Playlists tab first.");
+        return;
+      }
+
+      playlists.forEach(pl => {
+        const opt = document.createElement('option');
+        opt.value = pl.id;
+        opt.innerText = pl.name;
+        select.appendChild(opt);
+      });
+
+      openModal('playlist-modal');
+    }
+
+    function getSelectedDocumentIds() {
+      const checkboxes = document.querySelectorAll('.doc-checkbox:checked');
+      return Array.from(checkboxes).map(cb => parseInt(cb.getAttribute('data-id')));
+    }
+
+    async function batchAddToPlaylist() {
+      const selectedIds = getSelectedDocumentIds();
+      const playlistId = parseInt(document.getElementById('target-playlist').value);
+      
+      const playlists = await getAllRecords("playlists");
+      const target = playlists.find(p => p.id === playlistId);
+      
+      if (target) {
+        const newItems = Array.from(new Set([...target.items, ...selectedIds]));
+        target.items = newItems;
+        await updateRecord("playlists", target);
+        alert(`Added ${selectedIds.length} track(s) to ${target.name}.`);
+      }
+      
+      closeModal('playlist-modal');
+      renderPlaylists();
+    }
+
+    function openModal(id) { document.getElementById(id).classList.add('open'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+    function triggerConversion() {
+      if (importedQueue.length === 0) {
+        alert('Please select files using the + button first.');
+      } else {
+        openModal('convert-modal');
+      }
+    }
+
+    async function executeConversion() {
+      closeModal('convert-modal');
+      const convertBtn = document.getElementById('convert-btn');
+      convertBtn.disabled = true;
+      convertBtn.innerText = 'Loading FFmpeg...';
+
+      try {
+        await loadFFmpeg();
+
+        const format = document.getElementById('format').value;
+        const bitrate = document.getElementById('bitrate').value;
+        const enableFade = document.getElementById('enable-fade').checked;
+        const fadeDuration = document.getElementById('fade-duration').value || "3";
+        const enableCrossfade = document.getElementById('enable-crossfade').checked;
+
+        const title = document.getElementById('meta-title').value;
+        const artist = document.getElementById('meta-artist').value;
+        const album = document.getElementById('meta-album').value;
+        const folder = document.getElementById('target-folder').value;
+
+        if (enableCrossfade && importedQueue.length > 1) {
+          convertBtn.innerText = 'Applying Crossfade & Merging...';
+          
+          let filterComplex = '';
+          let inputs = [];
+          
+          for (let i = 0; i < importedQueue.length; i++) {
+            const inputName = `in_${i}.mp3`;
+            await ffmpeg.writeFile(inputName, await fetchFile(importedQueue[i]));
+            inputs.push('-i', inputName);
+          }
+
+          if (importedQueue.length === 2) {
+            filterComplex = `[0:a][1:a]acrossfade=d=${fadeDuration}:c1=tri:c2=tri[outa]`;
+          } else {
+            filterComplex = `[0:a][1:a]acrossfade=d=${fadeDuration}[a1];[a1][2:a]acrossfade=d=${fadeDuration}[outa]`;
+          }
+
+          const outputName = `merged_${Date.now()}.${format}`;
+          
+          let ffmpegArgs = [...inputs, '-filter_complex', filterComplex, '-map', '[outa]', '-b:a', bitrate];
+          
+          if (title) ffmpegArgs.push('-metadata', `title=${title}`);
+          if (artist) ffmpegArgs.push('-metadata', `artist=${artist}`);
+          if (album) ffmpegArgs.push('-metadata', `album=${album}`);
+
+          ffmpegArgs.push(outputName);
+          await ffmpeg.exec(ffmpegArgs);
+
+          const data = await ffmpeg.readFile(outputName);
+          await saveRecord("files", {
+            name: `Merged_Track.${format}`,
+            title: title || `Merged Track`,
+            artist: artist || "Unknown Artist",
+            album: album || "Converter PWA",
+            folder: folder,
+            type: `audio/${format}`,
+            size: data.byteLength,
+            data: data.buffer
+          });
+
+        } else {
+          for (let i = 0; i < importedQueue.length; i++) {
+            const file = importedQueue[i];
+            convertBtn.innerText = `Converting (${i + 1}/${importedQueue.length})...`;
+
+            const inputName = `input_${Date.now()}_${file.name}`;
+            const outputName = `output_${Date.now()}.${format}`;
+
+            await ffmpeg.writeFile(inputName, await fetchFile(file));
+            
+            let ffmpegArgs = ['-i', inputName, '-b:a', bitrate, '-vn'];
+
+            if (enableFade) {
+              ffmpegArgs.push('-af', `afade=t=in:ss=0:d=${fadeDuration},areverse,afade=t=in:ss=0:d=${fadeDuration},areverse`);
+            }
+
+            if (title) ffmpegArgs.push('-metadata', `title=${title}`);
+            if (artist) ffmpegArgs.push('-metadata', `artist=${artist}`);
+            if (album) ffmpegArgs.push('-metadata', `album=${album}`);
+
+            ffmpegArgs.push(outputName);
+            await ffmpeg.exec(ffmpegArgs);
+
+            const data = await ffmpeg.readFile(outputName);
+            const convertedName = file.name.replace(/\.[^/.]+$/, "") + `.${format}`;
+
+            await saveRecord("files", {
+              name: convertedName,
+              title: title || convertedName,
+              artist: artist || "Unknown Artist",
+              album: album || "Converter PWA",
+              folder: folder,
+              type: `audio/${format}`,
+              size: data.byteLength,
+              data: data.buffer
+            });
+
+            await ffmpeg.deleteFile(inputName);
+            await ffmpeg.deleteFile(outputName);
+          }
+        }
+
+        importedQueue = [];
+        renderQueueList();
+        renderDocuments();
+        alert('Processing finished successfully!');
+      } catch (error) {
+        console.error(error);
+        alert('An error occurred during audio processing.');
+      } finally {
+        convertBtn.disabled = false;
+        convertBtn.innerText = 'Convert Queue to MP3';
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      await initDB();
+      renderDocuments();
+      renderPlaylists();
+    });
+  </script>
+</body>
+</html>
