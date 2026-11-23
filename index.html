@@ -100,9 +100,18 @@
       border: 1px solid var(--border-color);
     }
 
-    .file-info { display: flex; flex-direction: column; gap: 4px; }
-    .file-name { font-weight: 600; font-size: 0.95rem; }
-    .file-meta { font-size: 0.75rem; color: var(--text-muted); }
+    .file-item {
+      cursor: pointer;
+    }
+
+    .file-item.playing {
+      border-color: var(--accent-purple);
+      background: var(--bg-card);
+    }
+
+    .file-info { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; margin-right: 8px; }
+    .file-name { font-weight: 600; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-meta { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     .actions { display: flex; gap: 8px; align-items: center; }
 
@@ -111,6 +120,7 @@
       border: none;
       font-size: 1rem;
       cursor: pointer;
+      padding: 4px;
     }
 
     .checkbox-select {
@@ -119,6 +129,7 @@
       accent-color: var(--accent-purple);
       margin-right: 12px;
       cursor: pointer;
+      flex-shrink: 0;
     }
 
     .toggle-group {
@@ -171,6 +182,63 @@
       background: var(--bg-surface);
       border-top: 1px solid var(--border-color);
       padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .player-overlay-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .now-playing-info {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .now-playing-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .now-playing-artist {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .overlay-nav-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .overlay-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .overlay-btn:active {
+      background: var(--accent-purple);
+      border-color: var(--accent-purple);
     }
 
     audio { width: 100%; height: 40px; }
@@ -224,7 +292,7 @@
     </section>
 
     <section id="tools" class="tab-content">
-      <div class="file-item" style="flex-direction: column; align-items: flex-start; gap: 10px;">
+      <div class="file-item" style="flex-direction: column; align-items: flex-start; gap: 10px; cursor: default;">
         <h3>Media Processor</h3>
         <p class="file-meta">Convert imported media or apply audio effects like fade and crossfade.</p>
         
@@ -300,6 +368,37 @@
     </div>
   </div>
 
+  <div class="modal" id="edit-song-modal">
+    <div class="modal-card">
+      <h3>Edit Song Info</h3>
+      <input type="hidden" id="edit-song-id">
+      <div class="form-group">
+        <label for="edit-title">Track Title</label>
+        <input type="text" id="edit-title" placeholder="Title">
+      </div>
+      <div class="form-group">
+        <label for="edit-artist">Artist</label>
+        <input type="text" id="edit-artist" placeholder="Artist">
+      </div>
+      <div class="form-group">
+        <label for="edit-album">Album</label>
+        <input type="text" id="edit-album" placeholder="Album">
+      </div>
+      <div class="form-group">
+        <label for="edit-folder">Folder Category</label>
+        <select id="edit-folder">
+          <option value="Music">Music</option>
+          <option value="Favorites">Favorites</option>
+          <option value="Recordings">Recordings</option>
+        </select>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <button style="flex: 1; padding: 8px; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px;" onclick="closeModal('edit-song-modal')">Cancel</button>
+        <button style="flex: 1; padding: 8px; background: var(--accent-purple); color: white; border: none; border-radius: 6px; font-weight: 600;" onclick="saveSongEdit()">Save</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal" id="playlist-modal">
     <div class="modal-card">
       <h3>Add to Playlist</h3>
@@ -315,12 +414,22 @@
   </div>
 
   <footer>
+    <div class="player-overlay-bar" id="player-overlay">
+      <div class="now-playing-info">
+        <span class="now-playing-title" id="now-playing-title">No track playing</span>
+        <span class="now-playing-artist" id="now-playing-artist">Tap a song to play</span>
+      </div>
+      <div class="overlay-nav-controls">
+        <button class="overlay-btn" onclick="playPreviousTrack()">⏮ Prev</button>
+        <button class="overlay-btn" onclick="playNextTrack()">Next ⏭</button>
+      </div>
+    </div>
     <audio id="global-player" controls></audio>
   </footer>
 
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js');
+      navigator.serviceWorker.register('./sw.js');
     }
 
     const { FFmpeg } = FFmpegWASM;
@@ -329,6 +438,8 @@
 
     let db = null;
     let importedQueue = [];
+    let currentPlaylistQueue = [];
+    let currentTrackIndex = -1;
 
     function initDB() {
       return new Promise((resolve, reject) => {
@@ -420,6 +531,7 @@
         const item = document.createElement('div');
         item.className = 'file-item';
         item.style.padding = '8px';
+        item.style.cursor = 'default';
         item.innerHTML = `
           <span class="file-name" style="font-size:0.85rem">${file.name}</span>
           <div class="actions">
@@ -447,31 +559,82 @@
       
       const filter = document.getElementById('folder-filter').value;
       const files = await getAllRecords("files");
-      
-      files.filter(f => filter === "All" || f.folder === filter).forEach(fileRecord => {
+      const filtered = files.filter(f => filter === "All" || f.folder === filter);
+      const filteredIds = filtered.map(f => f.id);
+
+      filtered.forEach(fileRecord => {
         const item = document.createElement('div');
-        item.className = 'file-item';
+        const isCurrent = currentPlaylistQueue[currentTrackIndex] === fileRecord.id;
+        item.className = `file-item${isCurrent ? ' playing' : ''}`;
+        item.onclick = () => playFile(fileRecord.id, filteredIds);
         
-        const blob = new Blob([fileRecord.data], { type: fileRecord.type });
-        const url = URL.createObjectURL(blob);
         const sizeMB = (fileRecord.size / (1024 * 1024)).toFixed(2);
 
         item.innerHTML = `
-          <div style="display:flex; align-items:center;">
-            <input type="checkbox" class="checkbox-select doc-checkbox" data-id="${fileRecord.id}">
+          <div style="display:flex; align-items:center; min-width:0; flex:1;">
+            <input type="checkbox" class="checkbox-select doc-checkbox" data-id="${fileRecord.id}" onclick="event.stopPropagation()">
             <div class="file-info">
               <span class="file-name">${fileRecord.title || fileRecord.name}</span>
               <span class="file-meta">${fileRecord.artist || 'Unknown Artist'} • ${fileRecord.folder || 'Music'} • ${sizeMB} MB</span>
             </div>
           </div>
-          <div class="actions">
-            <button class="btn-action" style="color:var(--accent-green)" onclick="playFile(${fileRecord.id})">▶</button>
+          <div class="actions" onclick="event.stopPropagation()">
+            <button class="btn-action" style="color:var(--accent-green)" onclick="openEditSongModal(${fileRecord.id})">✎</button>
             <button class="btn-action" style="color:var(--accent-blue)" onclick="shareFile(${fileRecord.id})">⎘</button>
             <button class="btn-action" style="color:var(--accent-red)" onclick="removeFile(${fileRecord.id})">✕</button>
           </div>
         `;
         list.appendChild(item);
       });
+    }
+
+    async function openEditSongModal(id) {
+      const files = await getAllRecords("files");
+      const record = files.find(f => f.id === id);
+      if (!record) return;
+
+      document.getElementById('edit-song-id').value = record.id;
+      document.getElementById('edit-title').value = record.title || record.name;
+      document.getElementById('edit-artist').value = record.artist || "";
+      document.getElementById('edit-album').value = record.album || "";
+      document.getElementById('edit-folder').value = record.folder || "Music";
+
+      openModal('edit-song-modal');
+    }
+
+    async function saveSongEdit() {
+      const id = parseInt(document.getElementById('edit-song-id').value);
+      const files = await getAllRecords("files");
+      const record = files.find(f => f.id === id);
+      if (!record) return;
+
+      record.title = document.getElementById('edit-title').value.trim() || record.name;
+      record.artist = document.getElementById('edit-artist').value.trim() || "Unknown Artist";
+      record.album = document.getElementById('edit-album').value.trim() || "Converter PWA";
+      record.folder = document.getElementById('edit-folder').value;
+
+      await updateRecord("files", record);
+      closeModal('edit-song-modal');
+      renderDocuments();
+
+      if (currentPlaylistQueue[currentTrackIndex] === id) {
+        updateOverlayMetadata(record);
+      }
+    }
+
+    function updateOverlayMetadata(record) {
+      const trackTitle = record.title || record.name;
+      const trackArtist = record.artist || "Unknown Artist";
+      document.getElementById('now-playing-title').innerText = trackTitle;
+      document.getElementById('now-playing-artist').innerText = trackArtist;
+
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: trackTitle,
+          artist: trackArtist,
+          album: record.album || "Converter PWA"
+        });
+      }
     }
 
     async function shareFile(id) {
@@ -497,10 +660,17 @@
       renderDocuments();
     }
 
-    async function playFile(id) {
+    async function playFile(id, queueIds = null) {
       const files = await getAllRecords("files");
       const record = files.find(f => f.id === id);
       if (!record) return;
+
+      if (Array.isArray(queueIds) && queueIds.length > 0) {
+        currentPlaylistQueue = queueIds;
+      } else if (!currentPlaylistQueue.includes(id)) {
+        currentPlaylistQueue = files.map(f => f.id);
+      }
+      currentTrackIndex = currentPlaylistQueue.indexOf(id);
 
       const blob = new Blob([record.data], { type: record.type });
       const url = URL.createObjectURL(blob);
@@ -508,13 +678,20 @@
       player.src = url;
       player.play();
 
-      if ('mediaSession' in navigator) {
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title: record.title || record.name,
-          artist: record.artist || "Unknown Artist",
-          album: record.album || "Converter PWA"
-        });
-      }
+      updateOverlayMetadata(record);
+      renderDocuments();
+    }
+
+    function playPreviousTrack() {
+      if (currentPlaylistQueue.length === 0) return;
+      const prevIndex = currentTrackIndex > 0 ? currentTrackIndex - 1 : currentPlaylistQueue.length - 1;
+      playFile(currentPlaylistQueue[prevIndex], currentPlaylistQueue);
+    }
+
+    function playNextTrack() {
+      if (currentPlaylistQueue.length === 0) return;
+      const nextIndex = currentTrackIndex < currentPlaylistQueue.length - 1 ? currentTrackIndex + 1 : 0;
+      playFile(currentPlaylistQueue[nextIndex], currentPlaylistQueue);
     }
 
     async function createPlaylist() {
@@ -539,10 +716,20 @@
             <span class="file-name">${pl.name}</span>
             <span class="file-meta">${pl.items.length} Tracks</span>
           </div>
-          <button class="btn-action" style="color:var(--accent-red)" onclick="removePlaylist(${pl.id})">✕</button>
+          <div class="actions">
+            ${pl.items.length > 0 ? `<button class="btn-action" style="color:var(--accent-green)" onclick="playPlaylist(${pl.id})">▶</button>` : ''}
+            <button class="btn-action" style="color:var(--accent-red)" onclick="removePlaylist(${pl.id})">✕</button>
+          </div>
         `;
         list.appendChild(item);
       });
+    }
+
+    async function playPlaylist(playlistId) {
+      const playlists = await getAllRecords("playlists");
+      const pl = playlists.find(p => p.id === playlistId);
+      if (!pl || pl.items.length === 0) return;
+      playFile(pl.items[0], pl.items);
     }
 
     async function removePlaylist(id) {
@@ -759,6 +946,15 @@
         convertBtn.disabled = false;
         convertBtn.innerText = 'Convert Queue to MP3';
       }
+    }
+
+    document.getElementById('global-player').addEventListener('ended', () => {
+      playNextTrack();
+    });
+
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.setActionHandler('previoustrack', () => playPreviousTrack());
+      navigator.mediaSession.setActionHandler('nexttrack', () => playNextTrack());
     }
 
     window.addEventListener('DOMContentLoaded', async () => {
